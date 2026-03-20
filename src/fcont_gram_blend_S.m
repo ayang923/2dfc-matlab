@@ -1,29 +1,27 @@
-% fcont_gram_blend_S : This routine computes the Fourier continuation in
-% parameter space for a S type patch, for a function over the unit square
-% domain. The function blends towards 0 upwards because the top row usually
-% corresponds with the x axis.
+function [fcont] = fcont_gram_blend_S(fx, d, A, Q)
+% FCONT_GRAM_BLEND_S  1D blending-to-zero Fourier continuation for S-type patches.
 %
-% Inputs: 
-%   fx : (real) values of the functions f over the unit square domain given
-%   a 2D matrix
-%   d : number of Gram interpolation points 
-%   A : matrix containing the values of the extended Gram polynomials at 
-%   the continuation points
-%   Q : matrix containing the values of the Gram polynomials at the first 
-%        d points of the interval. 
-
+% Projects the first d rows of fx onto the Gram polynomial basis Q, then
+% evaluates the extended Gram polynomials at the C*n_r continuation points
+% via A. The result is a smooth, high-order extension of fx that decays to
+% zero, prepended to the boundary row fx(1,:).
+%
+% This routine operates on 2D arrays: each column is an independent 1D signal,
+% and the FC extension is applied row-wise (i.e., along the eta direction).
+%
+% Inputs:
+%   fx - (n_eta x n_xi) matrix of function values; rows are indexed in
+%        increasing eta, so fx(1,:) is the boundary row (eta = 0)
+%   d  - Number of Gram matching points (rows of fx used for projection)
+%   A  - (n_r*C x d) matrix mapping Gram coefficients to continuation values
+%   Q  - (d x d) orthonormal Gram polynomial matrix
 %
 % Outputs:
-%   fcont : (real) vector of size lenfgth(fx) + C containing the values of
-%   the fx and its continuation on the extended grid
-%   fc: real vector of size C containing only the values of the continuation
+%   fcont - ((n_r*C + 1) x n_xi) matrix: the C*n_r extension rows followed
+%           by the boundary row fx(1,:)
 
-function [fcont] = fcont_gram_blend_S(fx, d, A, Q)
-fl = fx(1:d, :);
-
-fc = flipud(A * (Q .' * flipud(fl)));
-fc = double(fc);
-
-fcont = [fc; fx(1, :)];
+    fl = fx(1:d, :);
+    fc = flipud(A * (Q.' * flipud(fl)));
+    fc = double(fc);
+    fcont = [fc; fx(1, :)];
 end
-

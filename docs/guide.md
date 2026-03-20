@@ -1,115 +1,261 @@
-# How to Use This Code
+# 2DFC-MATLAB User Guide
 
-> A comprehensive guide to understand, set up, and run the code in this repository.
+> A comprehensive reference for understanding, setting up, and running the 2D Fourier Continuation code in this repository.
 
 ---
 
 ## Table of Contents
 
-- Overview
-- Setup Instructions
-  - Prerequisites
-  - Installation
-- Code Structure
-- How to Run
-  - Selecting parameters and loading pre-computed FC matrices
-  - Defining domain and selecting discretization parameters using the Curve_seq_obj object
-  - Calling the FC2D method
-- Troubleshooting
+- [Overview](#overview)
+- [Setup](#setup)
+- [Repository Structure](#repository-structure)
+- [How to Run the 2DFC Algorithm](#how-to-run-the-2dfc-algorithm)
+  1. [Select Parameters and Load FC Matrices](#1-select-parameters-and-load-fc-matrices)
+  2. [Define the Domain via `Curve_seq_obj`](#2-define-the-domain-via-curve_seq_obj)
+  3. [Call `FC2D`](#3-call-fc2d)
+- [Understanding the Output](#understanding-the-output)
+- [Examples](#examples)
+- [Troubleshooting](#troubleshooting)
 
 ---
 
 ## Overview
 
-## Setup Instructions
-All of this code was written and tested on MATLAB2021a but should work on other versions as well.
+This repository implements the **2D Fourier Continuation (2DFC)** algorithm, which takes a function $f(x,y)$ defined on an arbitrary 2D domain bounded by a sequence of $C^2$ curves and produces a smooth, periodic Fourier series representation on a bounding Cartesian rectangle. This allows spectral-accuracy computations (derivatives, Poisson solvers, etc.) on non-rectangular domains.
 
-### Prerequisites
-Code Tested on MATLAB 2024
-Symbolic Math Toolbox
+The repository also includes a **Poisson/Laplace solver** built on top of 2DFC: the algorithm computes a spectral particular solution via the inverse Laplacian of the 2DFC extension, then solves the remaining homogeneous Laplace problem using a boundary integral equation (BIE) method.
+
+The algorithm is described in detail in:
+
+> Bruno, O. P., & Lyon, M. (2010). High-order unconditionally stable FC-AD solvers for general smooth domains I. Basic elements. *Journal of Computational Physics*, 229(6), 2009–2033.
+
+---
+
+## Setup
+
+### Requirements
+
+- MATLAB R2021a or later (tested on MATLAB R2024)
+- Symbolic Math Toolbox (required only for precomputing FC matrices via `precomp_fc_data`)
 
 ### Installation
-N/A
 
-### Code Structure
-`FC_2D.m` contains "main" 2DFC function  
-  
-`Curve_seq_obj.m` contains class definition for "curve sequence" objects that stores the domain of the boundary. The algorithm assume that the domain it considers is the union of a finite number of $$C^2$$ curves.
-`Curve_obj.m` contains class definition of "curve" objects that encodes each $$C^2$$ curve in the domain as well as parameters that deterimine how the domain is discretized.
-  
-`S_patch_obj.m`, `C1_patch_obj.m`, and `C2_patch_obj.m` contain class definitions for each patch type. S-type patches denote patches constructed along smooth portions of boundary (twice continuously differentiable), C1-type patches denote patches constructed along concave corners (interior angle > 180 degrees), and C2-type patches denote patches constructed along convex corners (interior angle < 180 degrees)  
-`Q_patch_obj.m` contains class definition for square patches. The bulk of useable functions are defined in this class and each of the S-type, C1-type, and C2-type classes inherit from this class.  
+No installation is required. Add `src/` to your MATLAB path and run any of the example scripts under `examples/`.
 
-`R_cartesian_mesh_obj.m` contains the class definition for the cartesian mesh that the FFT is computed on. The function values of each patch are interpolated on to this mesh to obtain the continuation function values on the Cartesian mesh.  
+Precomputed FC matrices for common parameter values are included in `data/FC_data/`. If you need matrices for different parameters, use `generate_bdry_continuations` (see [Section 1](#1-select-parameters-and-load-fc-matrices)).
 
-`boomerang_2D_FC.m`, `teardrop_2DFC.m`, and `polynomial_curve.m` contains examples of the 2D-FC algorithm for three different examples.
+---
 
-## How to Run
-Running the 2DFC algorithm consists of three main steps:
-1. Selecting parameters and loading pre-computed FC matrices
-2. Defining domain and selecting discretization parameters using the Curve_seq_obj object
-3. Calling the FC2D method
+## Repository Structure
 
-Below, I will elaborate in each step in more detal.
+```
+2dfc-matlab/
+├── docs/
+│   └── guide.md                   This guide
+├── data/
+│   ├── generate_bdry_continuations.m  Generates and saves FC matrices
+│   └── FC_data/                   Precomputed A and Q matrices (.mat and .txt)
+│       ├── A_d{d}_C{C}_r{n_r}.mat
+│       └── Q_d{d}_C{C}_r{n_r}.mat
+├── src/                           Core library
+│   ├── FC2D.m                     Main entry point
+│   ├── FC2D_patches.m             Variant for pre-built patch arrays
+│   ├── Curve_seq_obj.m            Circular linked list of boundary curves
+│   ├── Curve_obj.m                Single C^2 curve with patch construction
+│   ├── Q_patch_obj.m              Base class for all patch types
+│   ├── S_patch_obj.m              Smooth (interior) boundary patch
+│   ├── C2_patch_obj.m             Convex corner patch
+│   ├── C1_patch_obj.m             Concave corner patch
+│   ├── R_cartesian_mesh_obj.m     Cartesian mesh with spectral operators
+│   ├── R_xi_eta_inversion.m       Batch Newton inversion of patch maps
+│   ├── fcont_gram_blend_S.m       1D blending-to-zero FC (S-patches)
+│   ├── fcont_gram_blend_C2.m      2D blending-to-zero FC (C2 corner)
+│   ├── precomp_fc_data.m          Precomputes FC matrices A and Q
+│   ├── barylag.m                  Barycentric Lagrange interpolation
+│   ├── inpolygon_mesh.m           Fast in-polygon test for Cartesian grids
+│   ├── newton_solve.m             General Newton root-finding
+│   ├── mgs.m                      Modified Gram-Schmidt QR decomposition
+│   └── shift_idx_mesh.m           Stencil shift utility for interpolation
+└── examples/
+    ├── 2DFC-examples/
+    │   ├── boomerang_2D_FC.m      Single smooth closed curve
+    │   ├── teardrop_2DFC.m        Teardrop with moderate tip
+    │   ├── teardrop_sharp_2DFC.m  Very sharp teardrop (near-cusp)
+    │   ├── heart_sharp_2DFC.m     Heart with near-cusp indentation
+    │   └── guitarbase_2DFC.m      Four-curve guitar-body domain
+    └── poisson-examples/
+        ├── poisson_solver.m       Poisson solver (full resolution output)
+        ├── poisson_solver_coarse.m Poisson solver (coarse evaluation grid)
+        ├── laplace_solver.m       Laplace BVP via boundary integral equation
+        └── ...
+```
 
-### 1. Selecting parameters and loading pre-computed FC matrices
+---
+
+## How to Run the 2DFC Algorithm
+
+Running the 2DFC algorithm requires three steps:
+
+1. Select algorithm parameters and load (or precompute) the FC matrices
+2. Define the domain boundary as a sequence of $C^2$ curves using `Curve_seq_obj`
+3. Call `FC2D`
+
+### 1. Select Parameters and Load FC Matrices
+
+#### Parameter Reference
+
+**Function and mesh parameters:**
+
+| Parameter | Description |
+|-----------|-------------|
+| `f` | Function handle `f(x,y)` to be represented |
+| `h` | Cartesian mesh step size |
+
+**1D-FC parameters:**
+
+| Parameter | Description |
+|-----------|-------------|
+| `d` | Number of Gram matching points for the 1D continuation; controls accuracy. Typical values: 6–10 |
+| `C_S` | Number of continuation points for smooth (S-type) patches |
+| `C_C` | Number of continuation points for corner (C1/C2-type) patches |
+| `n_r` | Refinement factor: the continuation grid is `n_r` times finer than the patch mesh |
+
+**Interpolation and Newton solver parameters:**
+
+| Parameter | Description |
+|-----------|-------------|
+| `M` | Polynomial degree for interpolating patch values onto the Cartesian mesh; `d+3` is a good default |
+| `eps_xi_eta` | Newton solver tolerance in parameter (ξ,η) space; `1e-13` to `1e-14` is typical |
+| `eps_xy` | Newton solver tolerance in physical (x,y) space; set equal to `eps_xi_eta` in most cases |
+
+#### Loading FC Matrices
+
+The FC matrices `A` and `Q` encode the 1D continuation operation and must be precomputed for the chosen `(d, C, n_r)` triple. Precomputed matrices for common parameters are in `data/FC_data/`. Load them as follows:
+
+```matlab
+d = 8; C = 27; n_r = 6;
+
+% Generate matrices if not already on disk
+if ~exist(['FC_data/A_d',num2str(d),'_C',num2str(C),'_r',num2str(n_r),'.mat'])
+    generate_bdry_continuations(d, C, C, 12, 20, 4, 256, n_r);
+end
+
+load(['FC_data/A_d',num2str(d),'_C',num2str(C),'_r',num2str(n_r),'.mat']);
+load(['FC_data/Q_d',num2str(d),'_C',num2str(C),'_r',num2str(n_r),'.mat']);
+A = double(A);
+Q = double(Q);
+```
+
+The same matrices are used for both S-type patches (`A_S`, `Q_S`) and corner patches (`A_C`, `Q_C`). You can use different `C_S` and `C_C` values, but the precomputed matrices must match the respective `C` value.
+
+---
+
+### 2. Define the Domain via `Curve_seq_obj`
+
 #### Background
-This step consists mostly of defining the `FC2D` method's function inputs. Here, I consider `f` a parameter even if it really is an input for the 2D-FC method in general.
 
-#### Relevant Parameters
-Domain and Function Parameters:
-- `f` - Function handle for 2D function that is to be approximated with a Fourier expansion
-- `curve_seq` - Curve_seq_obj describing domain of interest (more in second step)
+The domain boundary must be expressible as an ordered, counter-clockwise sequence of $k$ $C^2$ curves $(c_1, c_2, \dots, c_k)$ such that:
 
-1DFC Parameters:  
-- `d` - 1D-FC degree
-- `C_S` - Number of 1DFC continuation points used for smooth patches
-- `C_C` - Number of 1DFC continuation points used for corner patches
-- `n_r` - Refinement factor of 1DFC (for example, if n_r = 6, then the values of the continuation are given on a mesh that is 6 times finer than the mesh of the original function values)
+$$(\ell_1^i(1),\, \ell_2^i(1)) = (\ell_1^{i+1}(0),\, \ell_2^{i+1}(0)) \quad \text{for } i = 1, \dots, k$$
 
-Patch Parameters:
-- `eps_xi_eta` - Precision each patch uses in parameter space (xi-eta space)
-- `eps_xy` - Precision each patch uses in real space (x-y space); note this does not refer to the accuracy of the Fourier Series representation of the continuation function, it merely denotes what value is used for epsilon when using Newton's method to invert the parametrization of each patch.
-- `M` - Degree of 1D polynomial interpolation used to compute function values in real space (on the basis of function values in parameter space of patch)
+$$(\ell_1^k(1),\, \ell_2^k(1)) = (\ell_1^1(0),\, \ell_2^1(0))$$
 
-Mesh Parameters:
-- `h` - Step size of Cartesian mesh used
+Each curve is parametrized as $(x, y) = (\ell_1(\theta),\, \ell_2(\theta))$ for $\theta \in [0,1]$. The algorithm constructs one **smooth (S-type) patch** covering the interior of each curve, and one **corner patch** at each junction $\theta = 1$ of the current curve / $\theta = 0$ of the next curve.
 
-#### Other Implementation Details
-After selecting the 1DFC parameters described, either compute or load the continuation matrices `A_S`, `Q_S`, `A_C`, and `Q_C` as double precision matrices; the matrices `A_S` and `Q_S` are dependent on the parameter `C_S`, the matrices `A_C` and `Q_C` are dependent on the parameter `C_C`, and all four matrices are dependent on `d` and `n_r`. If the continuation matrices required aren't stored on disk already, the method `generate_bdry_continuations` can be used to compute these matrices and store them on disk. The parameter selection for this method will not be described here.
+#### Patch Construction Parameters
 
-### 2. Defining domain and selecting discretization parameters using the Curve_seq_obj object
-#### Background
-This step consists mostly of defining the sequence of $$k$$ $$C^2$$ curves $$(c_1, c_2, \dots, c_k)$$ that define the domain of interest as well as selecting parameters that determine how each patch is constructed and discretized. Each curve $$c_i$$ is $$C^2$$ in the sense that it can be parameterized as the points $$(x, y) = (\ell_1^i(\theta), \ell_2^i(\theta))$$ for all $$\theta \in [0,1]$$ such that $$\ell_1$$ and $$\ell_2$$ are both twice differentiable functions. This algorithm assumes that the sequence $$c_1, c_2, \dots, c_k)$$ is in order, i.e. $$(\ell_1^1(1), \ell_2^1(1)) = (\ell_1^2(0), \ell_2^2(0)),\ (\ell_1^2(1), \ell_2^2(1)) = (\ell_1^3(0), \ell_2^3(0)),\ \dots,\ (\ell_1^k(1), \ell_2^k(1)) = (\ell_1^1(0), \ell_2^1(0))$$, and positively oriented with respect to $$\theta$$ (counter-clockwise). Then, for each curve, since the entire domain is the union of several of these curves, the corners of this domain would arise at $$\theta=0$$ and $$\theta=1$$. Thus, each curve has one smooth patch and two corner patches associated with it.
-  
-Further, this parametrization admits a natural discretization and method of patch construction via $$\theta$$. In detail, we can discretize the curve with respect to theta using a uniform mesh over the interval $$[0, 1]$$. Then, by choosing appropriate points from this discretization in addition to some other parameters, we can construct discretized meshes of each patch and their associated parametrizations.
+Each call to `add_curve` requires the curve parametrization functions and the following parameters controlling how the patches are sized:
 
-#### Relevant Parameters
-- `l_1` - Parametrization of x-coordinate of curve, i.e. $$\ell_1(\theta)$$
-- `l_2` - Parametrization of y-coordinate of curve, i.e. $$\ell_2(\theta)$$
-- `l_1_prime` - First derivative of `l_1`, i.e. $$\ell_1'(\theta)$$
-- `l_2_prime` - First derivative of `l_2`, i.e. $$\ell_2'(\theta)$$
-- `l_1_dprime` - Second derivative of `l_1`, i.e. $$\ell_1''(\theta)$$
-- `l_2_dprime` - Second derivative of `l_2`, i.e. $$\ell_2''(\theta)$$
-- `n` - Number of points discretization points for curve; if 0 is entered, then the length of the curve is calculated and `n` is set to length of the curve divided by `h_norm` (described below) + 1, the idea behind this "default value" is matching the step size in the tangential direction in real space to be around the same as the step size in the normal direction in real space
-- `frac_n_C_0` - Fraction of total points that are used on this curve to construct the corner patch around $$(\ell_1(0), \ell_2(0))$$
-- `frac_n_C_1` - Fraction of total points that are used on this curve to construct the corner patch around $$(\ell_1(1), \ell_2(1))$$
-- `frac_n_S_0` - Fraction of points of the corner patch around $$(\ell_1(0), \ell_2(0))$$ that the smooth patch intersects
-- `frac_n_S_1` - Fraction of points of the corner patch around $$(\ell_1(1), \ell_2(1))$$ that the smooth patch intersects
-- `h_norm` - Step size in normal direction to boundary of discretization of smooth patch in real space
+| Parameter | Description |
+|-----------|-------------|
+| `n` | Number of uniform discretization points along $\theta \in [0,1]$. If `0`, computed automatically as $\lceil L / h_\text{norm} \rceil + 1$ where $L$ is the arc length |
+| `frac_n_C_0` | Fraction of `n` used to define the corner patch width at $\theta = 0$. Default (if `0`): $1/10$ |
+| `frac_n_C_1` | Fraction of `n` used to define the corner patch width at $\theta = 1$. Default (if `0`): $1/10$ |
+| `frac_n_S_0` | Fraction of the $\theta=0$ corner patch that overlaps the S-patch. Default (if `0`): $2/3$ |
+| `frac_n_S_1` | Fraction of the $\theta=1$ corner patch that overlaps the S-patch. Default (if `0`): $2/3$ |
+| `h_norm` | Normal step size (physical distance) for the S-patch mesh in the direction inward from the boundary |
 
-Essentially, `frac_n_C_0` and `frac_n_C_1` control the size of the two corner patches relative to the curve while `frac_n_S_0` and `frac_n_S_1` control how much the smooth patch intersects the two corner patches.
+Intuitively: `frac_n_C_0` and `frac_n_C_1` control the *size* of the two corner patches, while `frac_n_S_0` and `frac_n_S_1` control how far the S-patch *overlaps* into each corner patch (needed for the partition of unity).
 
-#### Other Implementation Details
-The Curve_seq_obj object acts as a circular linked list, and each curve must be added individually (and in order) to this list using the `add_curve` method associated with this object. This method takes in the parameters described above. Making sure the domain is parametrized and inputted according to the assumptions described is essential for this method working. 
+#### Example: Single Smooth Curve
 
-### 3. Calling the FC2D method
-Once everything in step 1 and 2 are done, then running the 2DFC algorithm is as simple as running the `FC2D` function with the correct parameters.
+```matlab
+curve_seq = Curve_seq_obj();
+curve_seq.add_curve( ...
+    l_1, l_2, l_1_prime, l_2_prime, l_1_dprime, l_2_dprime, ...
+    0,     ...  % n: auto-compute
+    0.1,   ...  % frac_n_C_0
+    0.1,   ...  % frac_n_C_1
+    0.6,   ...  % frac_n_S_0
+    0.6,   ...  % frac_n_S_1
+    h_norm);
+```
 
-### Expected Outputs
-The `FC2D` function returns a `R_cartesian_mesh_obj` object and a cell array of the patch objects. In addition, the error of the Fourier expansion approximation should be displayed in the command window. The `R_cartesian_mesh_obj` object contains all relevant information, including the Cartesian mesh information, continuation function values on Cartesian mesh, and Fourier expansion coefficients. The cell array of patch objects is mainly used for debugging and confirming that the patches were constructed as expected. 
+You can call `curve_seq.plot_geometry(d)` after adding all curves to visualize the patch boundaries before running the full algorithm.
+
+---
+
+### 3. Call `FC2D`
+
+```matlab
+[R, interior_patches, FC_patches, fc_err] = FC2D( ...
+    f, h, curve_seq, eps_xi_eta, eps_xy, ...
+    d, C_S, n_r, A_S, Q_S, C_C, A_C, Q_C, M);
+```
+
+`FC2D` will print absolute max, relative max, and relative $L^2$ errors to the command window as a quick accuracy check.
+
+---
+
+## Understanding the Output
+
+| Output | Type | Description |
+|--------|------|-------------|
+| `R` | `R_cartesian_mesh_obj` | The Cartesian mesh; contains `f_R` (function values), `fc_coeffs` (Fourier coefficients), and spectral operator methods |
+| `interior_patches` | cell array | `{S_patch_1, C_patch_1, S_patch_2, C_patch_2, ...}` for each curve |
+| `FC_patches` | cell array | Four `Q_patch_obj`s per curve: one S extension and three corner extensions |
+| `fc_err` | double | Relative $L^2$ error of the Fourier approximation (evaluated on a $2\times$ finer grid) |
+
+The most commonly used output is `R`. Key fields and methods:
+
+- `R.fc_coeffs` — `(n_y × n_x)` array of Fourier coefficients in `fftshift` order (DC at center)
+- `R.f_R` — `(n_y × n_x)` assembled continuation function values on the Cartesian grid
+- `R.in_interior` — `(n_y × n_x)` logical mask of interior points
+- `R.grad(f_mesh)` — spectral gradient
+- `R.lap(f_mesh)` — spectral Laplacian
+- `R.inv_lap()` — spectral inverse Laplacian (particular solution for Poisson)
+
+---
+
+## Examples
+
+All examples are in `examples/2DFC-examples/`. Each follows the same three-step pattern: define `f`, build `curve_seq`, call `FC2D`.
+
+| Script | Domain | Notes |
+|--------|--------|-------|
+| `boomerang_2D_FC.m` | Boomerang / figure-eight | Single smooth curve |
+| `teardrop_2DFC.m` | Teardrop, moderate tip | Single smooth curve |
+| `teardrop_sharp_2DFC.m` | Teardrop, near-cusp tip | Very fine mesh required |
+| `heart_sharp_2DFC.m` | Heart with near-cusp | Near-cusp indentation |
+| `guitarbase_2DFC.m` | Guitar-body shape | Four connected curves |
+
+Poisson/Laplace solver examples are in `examples/poisson-examples/`.
+
+---
 
 ## Troubleshooting
-If the error blows up or doesn't converge, consider:
-- Refining mesh
-- Plotting the patch meshes and playing around with the patch parameters associated with each curve
+
+**Error is large or doesn't converge:**
+- Refine the Cartesian mesh (reduce `h`)
+- Call `curve_seq.plot_geometry(d)` to visually inspect patch placement; adjust `frac_n_C_0/1` and `frac_n_S_0/1` if patches overlap incorrectly
+- Try increasing `d` or `M`
+
+**Newton solver non-convergence warnings:**
+- These usually arise at extreme patch boundaries; a small number are tolerable
+- Tighten `eps_xi_eta` / `eps_xy` if the issue is widespread
+
+**Out-of-memory errors:**
+- Reduce `n_r`, or use a coarser mesh and larger `d` to maintain accuracy with fewer grid points
+
+**Need FC matrices for new parameters:**
+- Run `generate_bdry_continuations(d, C, C, 12, 20, 4, 256, n_r)` (requires Symbolic Math Toolbox; takes several minutes for large `d`)

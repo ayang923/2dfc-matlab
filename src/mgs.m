@@ -8,6 +8,9 @@
 %   Q : m x n matrix of the QR decomposition of A
 %   R : n x n matrix of the QR decomposition of A
 %
+% Author: Daniel Leibovici
+% Email: dleibovi@caltech.edu
+%
 
 function [Q, R] = mgs(A)
 m = size(A,1);
@@ -60,7 +63,6 @@ Q(:,1) = A(:,1)/R(1,1);
     %     end
     end
 end
-
 % for ii = 1:d
 %     Q(:,ii) = std_basis(:,ii);    
 %     for jj = 1:ii-1
