@@ -68,7 +68,7 @@ classdef R_cartesian_mesh_obj < handle
     end
 
     methods
-        function obj = R_cartesian_mesh_obj(x_start, x_end, y_start, y_end, h, boundary_X, boundary_Y)
+        function obj = R_cartesian_mesh_obj(x_start, x_end, y_start, y_end, h, boundary_X, boundary_Y, n_x_padded, n_y_padded)
             % R_CARTESIAN_MESH_OBJ  Constructor.
             %
             % The x_end and y_end are rounded up to the nearest multiple of h so
@@ -79,15 +79,35 @@ classdef R_cartesian_mesh_obj < handle
             %   y_start, y_end - Requested y range (y_end is rounded up)
             %   h              - Uniform mesh spacing
             %   boundary_X/Y   - Closed polygon defining the domain interior
+            %   n_x_padded     - (optional) If provided, overrides n_x and extends
+            %                    x_end to x_start + (n_x_padded-1)*h
+            %   n_y_padded     - (optional) If provided, overrides n_y and extends
+            %                    y_end to y_start + (n_y_padded-1)*h
 
             obj.x_start = x_start;
             obj.y_start = y_start;
-            obj.x_end   = ceil((x_end - x_start) / h) * h + x_start;
-            obj.y_end   = ceil((y_end - y_start) / h) * h + y_start;
+            obj.h       = h;
 
-            obj.h   = h;
-            obj.n_x = round((obj.x_end - obj.x_start) / h) + 1;
-            obj.n_y = round((obj.y_end - obj.y_start) / h) + 1;
+            x_end_std = ceil((x_end - x_start) / h) * h + x_start;
+            y_end_std = ceil((y_end - y_start) / h) * h + y_start;
+            n_x_std   = round((x_end_std - x_start) / h) + 1;
+            n_y_std   = round((y_end_std - y_start) / h) + 1;
+
+            if nargin >= 9
+                if n_x_padded < n_x_std || n_y_padded < n_y_std
+                    error('n_x_padded (%d) and n_y_padded (%d) must be >= the standard grid size n_x=%d, n_y=%d.', ...
+                        n_x_padded, n_y_padded, n_x_std, n_y_std);
+                end
+                obj.n_x        = n_x_padded;
+                obj.n_y        = n_y_padded;
+                obj.x_end      = x_start + (n_x_padded - 1) * h;
+                obj.y_end      = y_start + (n_y_padded - 1) * h;
+            else
+                obj.x_end = x_end_std;
+                obj.y_end = y_end_std;
+                obj.n_x   = n_x_std;
+                obj.n_y   = n_y_std;
+            end
 
             % Round mesh points to reduce floating-point accumulation errors
             obj.x_mesh = transpose( ...

@@ -1,4 +1,4 @@
-function [R, interior_patches, FC_patches, fc_err] = FC2D(f, h, curve_seq, eps_xi_eta, eps_xy, d, C_S, n_r, A_S, Q_S, C_C, A_C, Q_C, M)
+function [R, interior_patches, FC_patches, fc_err] = FC2D(f, h, curve_seq, eps_xi_eta, eps_xy, d, C_S, n_r, A_S, Q_S, C_C, A_C, Q_C, M, n_x_padded, n_y_padded)
 % FC2D  Computes a smooth Fourier continuation of f on an arbitrary 2D domain.
 %
 % The domain is described by a sequence of C^2 curves (curve_seq). The
@@ -23,6 +23,10 @@ function [R, interior_patches, FC_patches, fc_err] = FC2D(f, h, curve_seq, eps_x
 %   A_C        - Precomputed FC matrix A for corner patches  (n_r*C_C x ...)
 %   Q_C        - Precomputed FC matrix Q for corner patches  (d x d)
 %   M          - Degree of polynomial interpolation onto Cartesian mesh
+%   n_x_padded - (optional) If provided, overrides the computed n_x of R;
+%                must be >= the natural grid size (see R_cartesian_mesh_obj)
+%   n_y_padded - (optional) If provided, overrides the computed n_y of R;
+%                must be >= the natural grid size
 %
 % Outputs:
 %   R               - R_cartesian_mesh_obj containing Cartesian mesh, 
@@ -59,10 +63,17 @@ function [R, interior_patches, FC_patches, fc_err] = FC2D(f, h, curve_seq, eps_x
 
     % Small random offset prevents grid points from landing exactly on the
     % domain boundary, which can cause inpolygon_mesh ambiguity.
-    R = R_cartesian_mesh_obj( ...
-        x_min - h, x_max + h, ...
-        y_min - h, y_max + h, ...
-        h, boundary_X, boundary_Y);
+    if nargin >= 16
+        R = R_cartesian_mesh_obj( ...
+            x_min - h, x_max + h, ...
+            y_min - h, y_max + h, ...
+            h, boundary_X, boundary_Y, n_x_padded, n_y_padded);
+    else
+        R = R_cartesian_mesh_obj( ...
+            x_min - h, x_max + h, ...
+            y_min - h, y_max + h, ...
+            h, boundary_X, boundary_Y);
+    end
 
     for i = 1:length(FC_patches)
         R.interpolate_patch(FC_patches{i}, n_r, M);
