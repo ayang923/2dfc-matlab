@@ -50,8 +50,7 @@ Precomputed FC matrices for are saved in `data/FC_data/`. If you need matrices f
 
 ```
 2dfc-matlab/
-├── docs/
-│   └── guide.md                   This guide
+├── README.md                          This guide
 ├── data/
 │   ├── generate_bdry_continuations.m  Generates and saves FC matrices
 │   └── FC_data/                   Precomputed A and Q matrices (.mat and .txt)
@@ -128,6 +127,18 @@ Running the 2DFC algorithm requires three steps:
 | `eps_xi_eta` | Newton solver tolerance in parameter (ξ,η) space; `1e-13` to `1e-14` is typical |
 | `eps_xy` | Newton solver tolerance in physical (x,y) space; set equal to `eps_xi_eta` in most cases |
 
+**Optional arguments to `FC2D` (bounding box and grid size):**
+
+After the required arguments through `M`, you may pass up to three optional trailing arguments. They control how the bounding rectangle for `R_cartesian_mesh_obj` is built from the patch extents.
+
+| Parameter | Description |
+|-----------|-------------|
+| `n_x_padded` | With `n_y_padded`, overrides the default `R.n_x` / `x_end` from the bounding box (uniform spacing `h`). Must be **≥** the natural grid size for that box; see `R_cartesian_mesh_obj`. Padding is used only if **`nargin ≥ 16`** and **`n_x_padded` is non-empty**. |
+| `n_y_padded` | Paired with `n_x_padded`: sets `R.n_y` and `y_end`. Supply **both** when you want a larger FFT grid than the minimal bounding rectangle. |
+| `perturb` | Read only if **`nargin ≥ 17`**. **Logical:** how far to **inflate** the patch bounding box before placing the grid (reduces ambiguous inside/outside tests when a grid line coincides with the boundary polygon). **`true`**: expand each side by **`rand(1)*h`** (independent draws in x and y). **`false`** or **omit** (e.g. call with only 14 or 16 arguments): expand each side by the fixed amount **`h`** — **reproducible**. To set `perturb` without padding, call `FC2D(..., M, [], [], perturb)`. |
+
+See [§3 Call `FC2D`](#3-call-fc2d) for example call patterns. The Poisson drivers `poisson_solver` / `poisson_solver_coarse` accept the same three optional arguments and forward them to `FC2D`.
+
 #### Loading FC Matrices
 
 The FC matrices `A` and `Q` encode the 1D continuation operation and must be precomputed for the chosen `(d, C, n_r)` triple. Precomputed matrices for common parameters are in `data/FC_data/`. Load them as follows:
@@ -154,28 +165,49 @@ The same matrices are used for both S-type patches (`A_S`, `Q_S`) and corner pat
 
 #### Background
 
-The domain boundary must be expressible as an ordered, counter-clockwise sequence of $k$ $C^2$ curves $(c_1, c_2, \dots, c_k)$ such that:
+The domain boundary must be expressible as an ordered, counter-clockwise sequence of $k$ $C^2$ curves $(c_1, c_2, \dots, c_k)$ such that the end of each curve meets the start of the next:
 
 $$(\ell_1^i(1),\, \ell_2^i(1)) = (\ell_1^{i+1}(0),\, \ell_2^{i+1}(0)) \quad \text{for } i = 1, \dots, k$$
 
-$$(\ell_1^k(1),\, \ell_2^k(1)) = (\ell_1^1(0),\, \ell_2^1(0))$$
+Each curve is parametrized as $(x, y) = (\ell_1(\theta),\, \ell_2(\theta))$ for $\theta \in [0,1]$.
 
-Each curve is parametrized as $(x, y) = (\ell_1(\theta),\, \ell_2(\theta))$ for $\theta \in [0,1]$. The algorithm constructs one **smooth (S-type) patch** covering the interior of each curve, and one **corner patch** at each junction $\theta = 1$ of the current curve / $\theta = 0$ of the next curve.
+#### Patches and Why They Are Needed
+
+The 2DFC algorithm requires the function to be extended smoothly to zero near the boundary. It does this by tiling the boundary region with overlapping **patches** — small curvilinear coordinate systems in which a smooth blending-to-zero extension can be applied.
+
+Two types of patches are constructed per curve:
+
+- **S-patch (smooth patch):** covers most of the curve's interior region, away from the junctions at $\theta=0$ and $\theta=1$.
+- **Corner patch:** centered at each junction point ($\theta=0$ of the current curve / $\theta=1$ of the previous curve, and vice versa). Corner patches handle the angular geometry at curve junctions, which the S-patch cannot.
+
+The S-patch and corner patches overlap, and a **partition of unity** blends their contributions smoothly in the overlapping region.
+
+> **Remark (convex C2 patches).** The **C2-type** (convex corner) patch construction and its partition-of-unity weights assume, for implementation simplicity, that **neighboring patches do not intersect** the region $\mathcal{M}_p^{\mathcal{C}_2}\bigl((d{-}1)h_\xi^{\mathcal{C}_2} \times (d{-}1)h_\eta^{\mathcal{C}_2}\bigr)$—the image in $(x,y)$ of the product $(d{-}1)h_\xi^{\mathcal{C}_2} \times (d{-}1)h_\eta^{\mathcal{C}_2}$ in $(\xi,\eta)$ under the parametrization $\mathcal{M}_p^{\mathcal{C}_2}$ (notations as in the paper). In practice, tune `frac_n_*` and `h_norm` so adjacent S/C1 patches avoid overlapping that set.
 
 #### Patch Construction Parameters
 
-Each call to `add_curve` requires the curve parametrization functions and the following parameters controlling how the patches are sized:
+To simplify patch construction, `add_curve` accepts fractional parameters that express patch sizes as fractions of the curve's total discretization count `n`, making them scale-invariant. Each curve is first **uniformly discretized** in parameter space: $\theta \in [0,1]$ is sampled at $n$ equally spaced points (or $n$ is chosen automatically from arc length and `h_norm`). All patch widths are then expressed as **fractions of $n$**, so the same relative layout works when you refine the mesh.
+
+- A **fraction of the $n$ points** (given by `frac_n_C_0`) is allocated to the **corner patch centered at $\theta = 0$** — that patch uses the discretization near the start of the curve.
+- Another **fraction** (`frac_n_C_1`) is allocated to the **corner patch centered at $\theta = 1$** — the discretization near the end of the curve.
+- The remaining interior segment supports the **S-patch**; the `frac_n_S_0` and `frac_n_S_1` parameters then describe how the S-patch **overlaps** into each corner patch (for the partition of unity), again as fractions relative to the corner-patch segment sizes.
+
+This “count points along $\theta$, then carve out corner regions by fractions” design keeps the interface simple and **scale-invariant**: you tune relative patch sizes without re-specifying physical lengths whenever $h$ changes.
+
+Each call to `add_curve` accepts:
 
 | Parameter | Description |
 |-----------|-------------|
-| `n` | Number of uniform discretization points along $\theta \in [0,1]$. If `0`, computed automatically as $\lceil L / h_\text{norm} \rceil + 1$ where $L$ is the arc length |
-| `frac_n_C_0` | Fraction of `n` used to define the corner patch width at $\theta = 0$. Default (if `0`): $1/10$ |
-| `frac_n_C_1` | Fraction of `n` used to define the corner patch width at $\theta = 1$. Default (if `0`): $1/10$ |
-| `frac_n_S_0` | Fraction of the $\theta=0$ corner patch that overlaps the S-patch. Default (if `0`): $2/3$ |
-| `frac_n_S_1` | Fraction of the $\theta=1$ corner patch that overlaps the S-patch. Default (if `0`): $2/3$ |
-| `h_norm` | Normal step size (physical distance) for the S-patch mesh in the direction inward from the boundary |
+| `n` | **Uniform $\theta$-grid size.** Number of equally spaced samples of $\theta \in [0,1]$ (endpoints included), i.e. $n-1$ intervals in $\theta$. Pass **`0`** to auto-set `n = ceil(arc_length / h_norm) + 1`. |
+| `frac_n_C_0` | **Corner patch at $\theta=0$.** Fraction of **`n`** used for the corner patch at the **start** of this segment (junction with the previous curve). Counts: `n_C_0 = ceil(frac_n_C_0 * n)` $\theta$-samples from the low-$\theta$ side. Pass **`0`** for default `ceil(n/10)`. |
+| `frac_n_C_1` | **Corner patch at $\theta=1$.** Fraction of **`n`** for the corner patch at the **end** of this segment (junction with the next curve). Counts: `n_C_1 = ceil(frac_n_C_1 * n)` samples from the high-$\theta$ side. Pass **`0`** for default `ceil(n/10)`. |
+| `frac_n_S_0` | **S-patch overlap at the $\theta=0$ corner.** Fraction of **`n_C_0`** (not of `n`) by which the smooth patch extends into the $\theta=0$ corner patch: `n_S_0 = ceil(frac_n_S_0 * n_C_0)` — this sets the partition-of-unity overlap width. Pass **`0`** for default `ceil(2/3 * n_C_0)`. |
+| `frac_n_S_1` | **S-patch overlap at the $\theta=1$ corner.** Fraction of **`n_C_1`**: `n_S_1 = ceil(frac_n_S_1 * n_C_1)`. Pass **`0`** for default `ceil(2/3 * n_C_1)`. |
+| `h_norm` | **Normal-direction resolution.** Physical step size in $(x,y)$ for the patch mesh **inward** from the boundary; with `n` it determines how the boundary strip is sampled perpendicular to the curve. |
 
-Intuitively: `frac_n_C_0` and `frac_n_C_1` control the *size* of the two corner patches, while `frac_n_S_0` and `frac_n_S_1` control how far the S-patch *overlaps* into each corner patch (needed for the partition of unity).
+Larger `frac_n_C_*` gives wider corner patches along $\theta$; larger `frac_n_S_*` widens the S-patch’s overlap into each corner patch (stronger S contribution in the blend).
+
+> **More control:** The `add_curve` interface is intentionally simple. If you need finer control — e.g., setting exact arc-length widths, non-uniform discretizations, or directly constructing `S_patch_obj` and `C1/C2_patch_obj` objects — you can build patches manually as well. This is more involved but gives complete flexibility over the patch geometry.
 
 #### Example: Single Smooth Curve
 
@@ -183,19 +215,21 @@ Intuitively: `frac_n_C_0` and `frac_n_C_1` control the *size* of the two corner 
 curve_seq = Curve_seq_obj();
 curve_seq.add_curve( ...
     l_1, l_2, l_1_prime, l_2_prime, l_1_dprime, l_2_dprime, ...
-    0,     ...  % n: auto-compute
-    0.1,   ...  % frac_n_C_0
-    0.1,   ...  % frac_n_C_1
-    0.6,   ...  % frac_n_S_0
-    0.6,   ...  % frac_n_S_1
+    0,     ...  % n: auto-compute from arc length
+    0.1,   ...  % frac_n_C_0: corner patch at theta=0 spans 10% of n
+    0.1,   ...  % frac_n_C_1: corner patch at theta=1 spans 10% of n
+    0.6,   ...  % frac_n_S_0: S-patch overlaps 60% into the theta=0 corner patch
+    0.6,   ...  % frac_n_S_1: S-patch overlaps 60% into the theta=1 corner patch
     h_norm);
 ```
 
-You can call `curve_seq.plot_geometry(d)` after adding all curves to visualize the patch boundaries before running the full algorithm.
+Call `curve_seq.plot_geometry(d)` after adding all curves to visualize the patch boundaries before running the full algorithm.
 
 ---
 
 ### 3. Call `FC2D`
+
+**Minimal call** (fixed `h` expansion, auto grid size from bounding box):
 
 ```matlab
 [R, interior_patches, FC_patches, fc_err] = FC2D( ...
@@ -203,7 +237,18 @@ You can call `curve_seq.plot_geometry(d)` after adding all curves to visualize t
     d, C_S, n_r, A_S, Q_S, C_C, A_C, Q_C, M);
 ```
 
-`FC2D` will print absolute max, relative max, and relative $L^2$ errors to the command window as a quick accuracy check.
+**Optional trailing arguments** (in order: `n_x_padded`, `n_y_padded`, `perturb`):
+
+| Goal | Example |
+|------|---------|
+| Override grid dimensions only | `FC2D(..., M, nx, ny)` — larger `nx`,`ny` add **padding** around the domain (same `h`; see `R_cartesian_mesh_obj`) |
+| Random bounding-box expansion | `FC2D(..., M, [], [], true)` — `rand(1)*h` per side |
+| Padding + random expansion | `FC2D(..., M, nx, ny, true)` |
+| Padding + fixed `h` expansion | `FC2D(..., M, nx, ny, false)` or `FC2D(..., M, nx, ny)` — last arg omitted defaults to fixed `h` |
+
+Padding is enabled only when **`n_x_padded` is non-empty** (`nargin >= 16` and `~isempty(n_x_padded)`). To pass **`perturb`** without padding, use **placeholders**: `FC2D(..., M, [], [], perturb)`.
+
+`FC2D` prints absolute max, relative max, and relative $L^2$ errors to the command window as a quick accuracy check.
 
 ---
 
@@ -229,33 +274,21 @@ The most commonly used output is `R`. Key fields and methods:
 
 ## Examples
 
-All examples are in `examples/2DFC-examples/`. Each follows the same three-step pattern: define `f`, build `curve_seq`, call `FC2D`.
-
-| Script | Domain | Notes |
-|--------|--------|-------|
-| `boomerang_2D_FC.m` | Boomerang / figure-eight | Single smooth curve |
-| `teardrop_2DFC.m` | Teardrop, moderate tip | Single smooth curve |
-| `teardrop_sharp_2DFC.m` | Teardrop, near-cusp tip | Very fine mesh required |
-| `heart_sharp_2DFC.m` | Heart with near-cusp | Near-cusp indentation |
-| `guitarbase_2DFC.m` | Guitar-body shape | Four connected curves |
-
-Poisson/Laplace solver examples are in `examples/poisson-examples/`.
+The code used to generate the 2D-FC examples considered in the paper are in `examples/2DFC-examples/` and the code used for the Poisson examples considered in the paper are in `examples/poisson-examples/`
 
 ---
 
 ## Troubleshooting
 
 **Error is large or doesn't converge:**
-- Refine the Cartesian mesh (reduce `h`)
 - Call `curve_seq.plot_geometry(d)` to visually inspect patch placement; adjust `frac_n_C_0/1` and `frac_n_S_0/1` if patches overlap incorrectly
-- Try increasing `d` or `M`
+- Try increasing `h_norm` or lowering `n_curve` to make the blending-to-zero region larger
+- Increasing the patch overlap regions
 
 **Newton solver non-convergence warnings:**
 - These usually arise at extreme patch boundaries; a small number are tolerable
-- Tighten `eps_xi_eta` / `eps_xy` if the issue is widespread
-
-**Out-of-memory errors:**
-- Reduce `n_r`, or use a coarser mesh and larger `d` to maintain accuracy with fewer grid points
+- This can happen if patch decomposition is inconsistent or polygonal approximation of global boundary is not refined enough
+- Loosen `eps_xi_eta` / `eps_xy` if the issue is widespread
 
 **Need FC matrices for new parameters:**
 - Run `generate_bdry_continuations(d, C, C, 12, 20, 4, 256, n_r)` (requires Symbolic Math Toolbox; takes several minutes for large `d`)
