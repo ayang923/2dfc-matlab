@@ -11,10 +11,13 @@
 %
 % The test function is:
 %   f(x,y) = -exp(0.5*(x^2+y^2)) * (sin(3*pi*x) + cos(2.5*pi*y))
-%
-% Parameters: d=8, C=27, n_r=6, h=0.01
 
 clc; clear; close all;
+
+d   = 4;
+h   = 0.01;
+n_x = 384;
+n_y = 288;
 
 f = @(x, y) exp(0.5*(x.^2 + y.^2)) .* (sin(10*pi*x) + cos(10*pi*y));
 
@@ -28,12 +31,11 @@ l_2_prime = @(theta) -2*beta*pi * cos(theta * 2*pi);
 l_1_dprime = @(theta) -2*pi^2 * sin(theta * pi);
 l_2_dprime = @(theta)  4*beta*pi^2 * sin(theta * 2*pi);
 
-d   = 8;
+
 C   = 27;
 n_r = 6;
 M   = d + 3;
 
-h       = 0.01;
 h_norm  = 1.5 * h;
 n_frac_C = 0.1;
 n_frac_S = 0.6;
@@ -56,4 +58,5 @@ curve_seq.add_curve(l_1, l_2, l_1_prime, l_2_prime, l_1_dprime, l_2_dprime, ...
     n_curve, n_frac_C, n_frac_C, n_frac_S, n_frac_S, h_norm);
 
 curve_seq.plot_geometry(d);
-R = FC2D(f, h, curve_seq, 1e-13, 1e-13, d, C, n_r, A, Q, C, A, Q, M);
+
+R = FC2D(f, h, curve_seq, 1e-13, 1e-13, d, C, n_r, A, Q, C, A, Q, M, n_x, n_y);

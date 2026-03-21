@@ -14,16 +14,20 @@
 % The test function is:
 %   f(x,y) = 4 + (1 + x^2 + y^2) * (sin(10.5*pi*x - 0.5) + cos(pi*y - 0.5))
 %
-% Parameters: d=6, C=27, n_r=6, h=0.004
 
 clc; clear; close all;
+
+h   = 0.0005;
+d   = 6;
+n_x = 3072;
+n_y = 4374;
+
 
 f = @(x, y) 4 + (1 + x.^2 + y.^2) .* (sin(10.5*pi*x - 0.5) + cos(1*pi*y - 0.5));
 
 alpha = 1/2;
 beta  = tan(alpha * pi / 2);
 
-h         = 0.004;
 h_tan     = 2 * h;
 h_norm    = h_tan;
 n_curve   = 0;   % auto-compute from arc length
@@ -100,7 +104,6 @@ curve_seq.add_curve(l_1, l_2, l_1_prime, l_2_prime, l_1_dprime, l_2_dprime, ...
     n_curve, n_frac_C_0, n_frac_C_1, n_frac_S_0, n_frac_S_1, h_norm);
 
 % FC parameters
-d   = 6;
 C   = 27;
 n_r = 6;
 M   = d + 3;
@@ -118,4 +121,4 @@ A = double(A);
 Q = double(Q);
 
 curve_seq.plot_geometry(d);
-R = FC2D(f, h, curve_seq, 1e-13, 1e-13, d, C, n_r, A, Q, C, A, Q, M);
+R = FC2D(f, h, curve_seq, 1e-13, 1e-13, d, C, n_r, A, Q, C, A, Q, M, n_x, n_y);
