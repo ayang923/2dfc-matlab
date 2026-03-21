@@ -27,7 +27,7 @@ The repository also includes a **Poisson/Laplace solver** built on top of 2DFC: 
 
 The algorithm is described in detail in:
 
-> Bruno, O. P., & Lyon, M. (2010). High-order unconditionally stable FC-AD solvers for general smooth domains I. Basic elements. *Journal of Computational Physics*, 229(6), 2009–2033.
+> Bruno, Oscar P., and Allen Yang. Two-Dimensional Fourier Continuation for Domains with Corners. Submitted manuscript, 2026.
 
 ---
 
@@ -40,9 +40,9 @@ The algorithm is described in detail in:
 
 ### Installation
 
-No installation is required. Add `src/` to your MATLAB path and run any of the example scripts under `examples/`.
+No installation is required. Add `src/` and `data/` to your MATLAB path and run any of the example scripts under `examples/`.
 
-Precomputed FC matrices for common parameter values are included in `data/FC_data/`. If you need matrices for different parameters, use `generate_bdry_continuations` (see [Section 1](#1-select-parameters-and-load-fc-matrices)).
+Precomputed FC matrices for are saved in `data/FC_data/`. If you need matrices for different parameters, use `generate_bdry_continuations` (see [Section 1](#1-select-parameters-and-load-fc-matrices)).
 
 ---
 

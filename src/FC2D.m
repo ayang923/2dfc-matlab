@@ -1,4 +1,4 @@
-function [R, interior_patches, FC_patches, fc_err] = FC2D(f, h, curve_seq, eps_xi_eta, eps_xy, d, C_S, n_r, A_S, Q_S, C_C, A_C, Q_C, M, n_x_padded, n_y_padded)
+function [R, interior_patches, FC_patches, fc_err] = FC2D(f, h, curve_seq, eps_xi_eta, eps_xy, d, C_S, n_r, A_S, Q_S, C_C, A_C, Q_C, M, n_x_padded, n_y_padded, perturb)
 % FC2D  Computes a smooth Fourier continuation of f on an arbitrary 2D domain.
 %
 % The domain is described by a sequence of C^2 curves (curve_seq). The
@@ -23,21 +23,23 @@ function [R, interior_patches, FC_patches, fc_err] = FC2D(f, h, curve_seq, eps_x
 %   A_C        - Precomputed FC matrix A for corner patches  (n_r*C_C x ...)
 %   Q_C        - Precomputed FC matrix Q for corner patches  (d x d)
 %   M          - Degree of polynomial interpolation onto Cartesian mesh
-%   n_x_padded - (optional) If provided, overrides the computed n_x of R;
-%                must be >= the natural grid size (see R_cartesian_mesh_obj)
-%   n_y_padded - (optional) If provided, overrides the computed n_y of R;
-%                must be >= the natural grid size
+%   n_x_padded - (optional) If provided (non-empty), overrides the computed n_x of R;
+%                must be >= the natural grid size (see R_cartesian_mesh_obj).
+%                Pass [] to skip padding while still supplying perturb.
+%   n_y_padded - (optional) If provided (non-empty), overrides the computed n_y of R;
+%                must be >= the natural grid size.
+%                Pass [] to skip padding while still supplying perturb.
+%   perturb    - (optional) Logical flag. If true, expand the bounding box by
+%                rand(1)*h on each side (random perturbation). If false or omitted,
+%                expand by the fixed amount h.
 %
 % Outputs:
-%   R               - R_cartesian_mesh_obj containing Cartesian mesh, 
+%   R               - R_cartesian_mesh_obj containing Cartesian mesh,
 %                     continuation function values, and Fourier coefficients
 %   interior_patches - Cell array of {S_patch, C_patch} objects per curve
 %   FC_patches       - Cell array of 4 FC extension Q_patch_obj objects per
 %                      curve (1 from S, 3 from C)
 %   fc_err           - Relative L2 error of the Fourier approximation
-%
-% The bounding box of R is expanded by a small random perturbation of h to
-% avoid aliasing issues with grid-aligned boundaries.
 
     interior_patches = curve_seq.construct_patches(f, d, eps_xi_eta, eps_xy);
 
@@ -61,17 +63,25 @@ function [R, interior_patches, FC_patches, fc_err] = FC2D(f, h, curve_seq, eps_x
 
     [boundary_X, boundary_Y] = curve_seq.construct_boundary_mesh(n_r * 20);
 
-    % Small random offset prevents grid points from landing exactly on the
-    % domain boundary, which can cause inpolygon_mesh ambiguity.
-    if nargin >= 16
+    % Expand the bounding box to prevent grid points from landing exactly on
+    % the domain boundary (inpolygon_mesh ambiguity). With perturb=true, each
+    % side is expanded by an independent rand(1)*h; otherwise by the fixed h.
+    if nargin >= 17 && perturb
+        dx = rand(1)*h;  dy = rand(1)*h;
+    else
+        dx = h;  dy = h;
+    end
+
+    use_padding = nargin >= 16 && ~isempty(n_x_padded);
+    if use_padding
         R = R_cartesian_mesh_obj( ...
-            x_min - h, x_max + h, ...
-            y_min - h, y_max + h, ...
+            x_min - dx, x_max + dx, ...
+            y_min - dy, y_max + dy, ...
             h, boundary_X, boundary_Y, n_x_padded, n_y_padded);
     else
         R = R_cartesian_mesh_obj( ...
-            x_min - h, x_max + h, ...
-            y_min - h, y_max + h, ...
+            x_min - dx, x_max + dx, ...
+            y_min - dy, y_max + dy, ...
             h, boundary_X, boundary_Y);
     end
 
