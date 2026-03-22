@@ -1,14 +1,11 @@
 % C1_PATCH_OBJ  Concave corner (C1-type) boundary patch for the 2DFC algorithm.
 %
 % A C1-type patch covers a concave corner of the domain (interior angle > 180
-% degrees, i.e. a reflex corner). As with C2_patch_obj the parametrization is
-% a tensor-product:
+% degrees, i.e. a reflex corner). The parametrization is:
 %
 %   M_p(xi, eta) = l_curr(xi_tilde(xi)) + l_next(eta_tilde(eta)) - corner_point
 %
-% but the xi and eta ranges are scaled to cover twice the corner-patch width
-% (n_C * 2 - 1 points) to accommodate the concave geometry. The patch is
-% split into two overlapping sub-patches:
+% The patch is split into two overlapping sub-patches:
 %
 %   L ("long") - xi in [1/2, 1/2+(d-1)*h_xi], eta in [0, 1/2+(d-1)*h_eta]
 %   W ("wide") - xi in [0,   1/2],             eta in [1/2, 1/2+(d-1)*h_eta]

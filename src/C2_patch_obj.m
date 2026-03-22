@@ -1,7 +1,7 @@
 % C2_PATCH_OBJ  Convex corner (C2-type) boundary patch for the 2DFC algorithm.
 %
 % A C2-type patch covers a convex corner of the domain (interior angle < 180
-% degrees). The corner patch parametrization is a tensor-product extension:
+% degrees). The C2-type corner patch parametrization is:
 %
 %   M_p(xi, eta) = l_curr(xi_tilde(xi)) + l_next(eta_tilde(eta)) - corner_point
 %
